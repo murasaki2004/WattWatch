@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [{"Name": "murasaki"}],
+        "Category": "System Information",
+        "Description": "Power widget — battery level, charge/discharge power, remaining time",
+        "EnabledByDefault": true,
+        "Icon": "battery",
+        "Id": "org.murasaki.wattwatch",
+        "License": "MPL-2.0",
+        "Name": "WattWatch",
+        "Version": "0.1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

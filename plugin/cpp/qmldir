@@ -1,0 +1,2 @@
+module WattWatch
+plugin wattwatch_plugin

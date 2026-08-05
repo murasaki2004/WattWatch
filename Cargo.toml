@@ -1,0 +1,17 @@
+[package]
+name = "WattWatch"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "wattwatch_backend"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+# bridge
+cxx = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,8 @@
+/target
+/temporary
+/build_debug
+/build_release
+/.codewhale
+compile_commands.json
+
+[user] useConfigOnly = true
