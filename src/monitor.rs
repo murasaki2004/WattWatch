@@ -1,10 +1,17 @@
 use crate::cache::MonitorCache;
+use circular_buffer::FixedCircularBuffer;
 
-pub struct Monitor;
+pub struct Monitor {
+    // f32表示power、bool为true时表示输入；false时表示输出
+    power_log: FixedCircularBuffer<(f32, bool), 1440>
+}
 
 impl Monitor {
     pub fn new() -> Self {
-        Self
+        let power_log_init = FixedCircularBuffer::<(f32, bool), 1440>::new();
+        Self {
+            power_log: power_log_init
+        }
     }
 
     /// 获取设备剩余电量百分比。
@@ -129,6 +136,28 @@ impl Monitor {
         format!("{}:{:02}", hours, minutes)
     }
 
+
+    /// 将当前功率与状态计入日志。
+    ///
+    /// 成功记录返回 `true`;sysfs 读取失败时不记录并返回 `false`。
+    pub fn push_power_log(&mut self) -> bool {
+        let (Some(power), Some(status)) =
+            (self.get_battery_power(), Monitor::get_battery_status())
+        else {
+            return false;
+        };
+        self.power_log.push_back((power, status));
+        true
+    }
+
+    /// 读取功耗日志快照(旧 → 新)。
+    ///
+    /// 返回 `power_log` 中记录的功率与充放电状态,
+    /// `f32` 为功率(瓦,正数),`bool` 为 `true` 时表示输入(充电),`false` 表示输出(放电)。
+    pub fn get_power_log(&self) -> Vec<(f32, bool)> {
+        self.power_log.to_vec()
+    }
+
     /// 采集所有传感器数据并填充 `MonitorCache`。
     ///
     /// 内部依次调用各 `get_*` 方法，将结果写入缓存结构体。
@@ -153,6 +182,39 @@ impl Monitor {
             battery_remaining,
             battery_capacity_wh: self.get_battery_capacity().unwrap_or(0.0),
             battery_energy_now_wh: self.get_battery_energy_now().unwrap_or(0.0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 环形缓冲:容量上限 1440,满时挤出最旧,读取顺序保持插入序(旧 → 新)。
+    #[test]
+    fn power_log_bounded_and_ordered() {
+        let mut m = Monitor::new();
+        for i in 0..1500u32 {
+            m.power_log.push_back((i as f32, i % 2 == 0));
+        }
+        let log = m.get_power_log();
+        assert_eq!(log.len(), 1440);
+        assert_eq!(log[0].0, 60.0); // 最旧的 60 条被挤出
+        assert_eq!(log[1439].0, 1499.0);
+        for w in log.windows(2) {
+            assert!(w[0].0 < w[1].0, "顺序必须保持插入序");
+        }
+    }
+
+    /// 真实 sysfs 下 push 一次应记录一条(机器无电池时静默失败,不 panic)。
+    #[test]
+    fn push_power_log_with_sysfs() {
+        let mut m = Monitor::new();
+        let _ = m.push_power_log();
+        let log = m.get_power_log();
+        assert!(log.len() <= 1);
+        if let Some((p, _c)) = log.first() {
+            assert!(*p >= 0.0);
         }
     }
 }

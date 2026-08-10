@@ -59,12 +59,12 @@ Item {
             valid: root.hasBattery
         }
 
-        // ── 功耗/时间文本(加粗黑色,宽度随内容自适应) ──
+        // ── 功耗/时间文本(加粗灰色,宽度随内容自适应) ──
         PlasmaComponents.Label {
             Layout.alignment: Qt.AlignVCenter
             font.bold: true
             font.pixelSize: 12
-            color: "#000000"
+            color: "#888888"
             text: layout.infoText
             // 兜底:面板空间被压缩到小于内容时不溢出,改为省略号
             elide: Text.ElideRight

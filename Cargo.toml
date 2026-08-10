@@ -11,6 +11,7 @@ crate-type = ["staticlib", "rlib"]
 libc = "0.2"
 # bridge
 cxx = "1.0"
+circular-buffer = "2.0.0"
 
 [profile.release]
 opt-level = 3

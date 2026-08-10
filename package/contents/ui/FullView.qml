@@ -7,7 +7,8 @@ import WattWatch 1.0
 /// 点击部件后弹出的详细信息面板 — 与紧凑视图同风格
 ///
 /// 头部: 大号电池图标 + 大百分比 + 状态行(充电中/放电中/已充满/无电池)
-/// 下方: monitor 模块返回的完整数据(状态、功率、剩余能量、设计容量、剩余时间)
+/// 中部: monitor 模块返回的完整数据(状态、功率、剩余能量、设计容量、剩余时间)
+/// 底部: 功耗-时间折线图(每 30 分钟采样一次)
 ColumnLayout {
     id: root
     spacing: 12
@@ -120,6 +121,45 @@ ColumnLayout {
         PlasmaComponents.Label {
             text: Gauge.batteryRemaining === "" ? "—" : Gauge.batteryRemaining
             font.bold: true
+        }
+    }
+
+    // ── 功耗趋势(无电池时隐藏)──
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.preferredHeight: 1
+        color: PlasmaCore.Theme.textColor
+        opacity: 0.15
+        visible: root.hasBattery
+    }
+
+    PlasmaComponents.Label {
+        text: "Power trend"
+        font.bold: true
+        visible: root.hasBattery
+    }
+
+    PowerChart {
+        id: chart
+        Layout.fillWidth: true
+        Layout.preferredHeight: 120
+        Layout.maximumWidth: 300
+        Layout.alignment: Qt.AlignHCenter
+        samples: Gauge.powerLog
+        visible: root.hasBattery
+    }
+
+    PlasmaComponents.Label {
+        Layout.alignment: Qt.AlignHCenter
+        font.pixelSize: 11
+        color: PlasmaCore.Theme.textColor
+        opacity: 0.7
+        visible: root.hasBattery
+        text: {
+            if (!chart.hasData) return "每 10 分钟采样一次";
+            return chart.samples.length + " 条 · " + chart.spanText
+                + " · 平均 " + chart.avgPower.toFixed(1) + " W"
+                + " · 峰值 " + chart.maxPower.toFixed(1) + " W";
         }
     }
 

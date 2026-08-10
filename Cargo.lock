@@ -6,6 +6,7 @@ version = 4
 name = "WattWatch"
 version = "0.1.0"
 dependencies = [
+ "circular-buffer",
  "cxx",
  "libc",
 ]
@@ -25,6 +26,12 @@ dependencies = [
  "find-msvc-tools",
  "shlex",
 ]
+
+[[package]]
+name = "circular-buffer"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f5610398bbf405be68c4daeadee379d4dca31226cdf9076746a875bc58a69e3"
 
 [[package]]
 name = "clap"
