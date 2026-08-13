@@ -29,6 +29,7 @@ QVariantList GaugeProxy::powerLog() const {
     auto samples = _backend->power_log();
     for (const auto &s : samples) {
         QVariantMap m;
+        m[QStringLiteral("timestamp")] = static_cast<qlonglong>(s.timestamp);
         m[QStringLiteral("power")] = s.power;
         m[QStringLiteral("charging")] = s.charging;
         list.append(m);

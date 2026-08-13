@@ -1,14 +1,18 @@
 use crate::cache::MonitorCache;
 use circular_buffer::FixedCircularBuffer;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// 功耗采样:unix 秒时间戳,功率(瓦,正数),充电标志(true=输入/false=输出)
+pub type PowerSample = (i64, f32, bool);
 
 pub struct Monitor {
-    // f32表示power、bool为true时表示输入；false时表示输出
-    power_log: FixedCircularBuffer<(f32, bool), 1440>
+    // i64为unix时间戳、f32表示power、bool为true时表示输入；false时表示输出
+    power_log: FixedCircularBuffer<PowerSample, 1440>
 }
 
 impl Monitor {
     pub fn new() -> Self {
-        let power_log_init = FixedCircularBuffer::<(f32, bool), 1440>::new();
+        let power_log_init = FixedCircularBuffer::<PowerSample, 1440>::new();
         Self {
             power_log: power_log_init
         }
@@ -140,22 +144,31 @@ impl Monitor {
     /// 将当前功率与状态计入日志。
     ///
     /// 成功记录返回 `true`;sysfs 读取失败时不记录并返回 `false`。
+    /// 记录附带当前 unix 秒时间戳;环形缓冲容量为 1440,满时自动挤出最旧记录。
     pub fn push_power_log(&mut self) -> bool {
         let (Some(power), Some(status)) =
             (self.get_battery_power(), Monitor::get_battery_status())
         else {
             return false;
         };
-        self.power_log.push_back((power, status));
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.power_log.push_back((timestamp, power, status));
         true
     }
 
     /// 读取功耗日志快照(旧 → 新)。
     ///
-    /// 返回 `power_log` 中记录的功率与充放电状态,
-    /// `f32` 为功率(瓦,正数),`bool` 为 `true` 时表示输入(充电),`false` 表示输出(放电)。
-    pub fn get_power_log(&self) -> Vec<(f32, bool)> {
+    /// 返回 `power_log` 中记录的 (unix 秒时间戳, 功率, 充电标志)。
+    pub fn get_power_log(&self) -> Vec<PowerSample> {
         self.power_log.to_vec()
+    }
+
+    /// 从持久化历史恢复一条采样(不读 sysfs,仅填充缓冲)。
+    pub fn restore_sample(&mut self, sample: PowerSample) {
+        self.power_log.push_back(sample);
     }
 
     /// 采集所有传感器数据并填充 `MonitorCache`。
@@ -195,14 +208,15 @@ mod tests {
     fn power_log_bounded_and_ordered() {
         let mut m = Monitor::new();
         for i in 0..1500u32 {
-            m.power_log.push_back((i as f32, i % 2 == 0));
+            m.power_log
+                .push_back((i as i64, i as f32, i % 2 == 0));
         }
         let log = m.get_power_log();
         assert_eq!(log.len(), 1440);
-        assert_eq!(log[0].0, 60.0); // 最旧的 60 条被挤出
-        assert_eq!(log[1439].0, 1499.0);
+        assert_eq!(log[0].1, 60.0); // 最旧的 60 条被挤出
+        assert_eq!(log[1439].1, 1499.0);
         for w in log.windows(2) {
-            assert!(w[0].0 < w[1].0, "顺序必须保持插入序");
+            assert!(w[0].1 < w[1].1, "顺序必须保持插入序");
         }
     }
 
@@ -213,8 +227,10 @@ mod tests {
         let _ = m.push_power_log();
         let log = m.get_power_log();
         assert!(log.len() <= 1);
-        if let Some((p, _c)) = log.first() {
+        if let Some((ts, p, _c)) = log.first() {
             assert!(*p >= 0.0);
+            // 时间戳应为接近当前时间的 unix 秒(2026 年 ≈ 1.78e9)
+            assert!(*ts > 1_500_000_000);
         }
     }
 }
