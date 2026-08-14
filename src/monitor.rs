@@ -1,5 +1,6 @@
 use crate::cache::MonitorCache;
 use circular_buffer::FixedCircularBuffer;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 功耗采样:unix 秒时间戳,功率(瓦,正数),充电标志(true=输入/false=输出)
@@ -18,36 +19,53 @@ impl Monitor {
         }
     }
 
+    /// sysfs 电源设备目录
+    const POWER_SUPPLY_DIR: &str = "/sys/class/power_supply";
+
+    /// 按顺序查找电池设备在 sysfs 中的路径。
+    ///
+    /// 依次尝试 `BAT0`、`BAT1`、`BAT2`…,返回第一个存在的电池目录
+    /// (如 `/sys/class/power_supply/BAT0`);全部不存在时返回 `None`。
+    /// 各读取函数通过该路径拼接具体属性文件,避免硬编码具体电池序号。
+    fn battery_sysfs_dir() -> Option<PathBuf> {
+        (0..=32)
+            .map(|i| Path::new(Self::POWER_SUPPLY_DIR).join(format!("BAT{i}")))
+            .find(|p| p.is_dir())
+    }
+
     /// 获取设备剩余电量百分比。
     ///
-    /// 通过 sysfs 读取 `/sys/class/power_supply/BAT0/capacity` 获取电池剩余容量百分比。
+    /// 通过 sysfs 读取 `<BATx>/capacity`(路径由 `battery_sysfs_dir` 按顺序解析)
+    /// 获取电池剩余容量百分比。
     /// 若文件不存在或内容无法解析为无符号整数，则返回 `None`。
     ///
     /// 返回值范围为 `0..=100`（`Some` 时）。
     fn get_battery_percentage() -> Option<u8> {
-        let capacity_str = std::fs::read_to_string("/sys/class/power_supply/BAT0/capacity").ok()?;
+        let capacity_str =
+            std::fs::read_to_string(Self::battery_sysfs_dir()?.join("capacity")).ok()?;
         let capacity: u8 = capacity_str.trim().parse().ok()?;
         Some(capacity)
     }
 
     /// 获取设备电池实时输入/输出功率（单位：w）
     ///
-    /// 通过 sysfs 读取 `/sys/class/power_supply/BAT0/power_now` 获取功率。
+    /// 通过 sysfs 读取 `<BATx>/power_now` 获取功率。
     /// 若文件不存在或内容无法解析，则返回 `None`。
     /// 需要结合电池充电状态判断属于输入or输出
     fn get_battery_power(&mut self) -> Option<f32> {
-        let power_str = std::fs::read_to_string("/sys/class/power_supply/BAT0/power_now").ok()?;
+        let power_str =
+            std::fs::read_to_string(Self::battery_sysfs_dir()?.join("power_now")).ok()?;
         let power_uw: f32 = power_str.trim().parse().ok()?;
         Some(power_uw / 1_000_000.0)
     }
 
     /// 获取设备电池容量。
     ///
-    /// 通过linux的sysfs读取BAT0的energy_full_design
+    /// 通过linux的sysfs读取 `<BATx>/energy_full_design`(路径由 `battery_sysfs_dir` 解析)
     /// 单位wh
     fn get_battery_capacity(&mut self) -> Option<f32> {
         let capacity_str =
-            std::fs::read_to_string("/sys/class/power_supply/BAT0/energy_full_design").ok()?;
+            std::fs::read_to_string(Self::battery_sysfs_dir()?.join("energy_full_design")).ok()?;
         // sysfs 中 energy_full_design 单位为微瓦时（μWh），除以 1_000_000 转换为 Wh。
         let capacity_uw: f32 = capacity_str.trim().parse().ok()?;
         Some(capacity_uw / 1_000_000.0)
@@ -55,24 +73,25 @@ impl Monitor {
 
     /// 获取设备电池当前剩余能量。
     ///
-    /// 通过 sysfs 读取 `/sys/class/power_supply/BAT0/energy_now` 获取当前剩余能量。
+    /// 通过 sysfs 读取 `<BATx>/energy_now` 获取当前剩余能量。
     /// 若文件不存在或内容无法解析，则返回 `None`。
     ///
     /// 单位 Wh（源数据为 μWh，除以 1_000_000 转换）。
     fn get_battery_energy_now(&mut self) -> Option<f32> {
-        let energy_str = std::fs::read_to_string("/sys/class/power_supply/BAT0/energy_now").ok()?;
+        let energy_str =
+            std::fs::read_to_string(Self::battery_sysfs_dir()?.join("energy_now")).ok()?;
         let energy_uw: f32 = energy_str.trim().parse().ok()?;
         Some(energy_uw / 1_000_000.0)
     }
 
     /// 获取设备电池充电状态。
     ///
-    /// 通过 sysfs 读取 `/sys/class/power_supply/BAT0/status` 获取充放电状态。
+    /// 通过 sysfs 读取 `<BATx>/status` 获取充放电状态。
     ///   `"Charging"` 或 `"Full"` 视为充电中（`Some(true)`），
     ///   `"Discharging"` 或 `"Not charging"` 视为离电（`Some(false)`），
     ///   其他状态（如 `"Unknown"`）或读取失败返回 `None`。
     fn get_battery_status() -> Option<bool> {
-        let status = std::fs::read_to_string("/sys/class/power_supply/BAT0/status").ok()?;
+        let status = std::fs::read_to_string(Self::battery_sysfs_dir()?.join("status")).ok()?;
         match status.trim() {
             "Charging" | "Full" => Some(true),
             "Discharging" | "Not charging" => Some(false),
