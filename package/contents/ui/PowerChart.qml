@@ -3,11 +3,13 @@ import org.kde.plasma.core as PlasmaCore
 
 /// 功耗-时间折线图(Canvas 手绘,无额外依赖)
 ///
-/// - samples: 功耗采样数组(旧 → 新),元素形如 { power: 瓦数, charging: bool }
-/// - 横轴: 采样序号(每个采样间隔 30 分钟)
+/// - samples: 功耗采样数组(旧 → 新),元素形如 { timestamp: unix秒, power: 瓦数, charging: bool }
+/// - 横轴: 采样序号(每个采样间隔 10 分钟)
 /// - 纵轴: 功耗(W),自动按最大值缩放
 /// - 折线分段着色: 充电段绿色,放电段主题色
 /// - 数据不足 2 条时显示提示文本
+/// - 节点圆点: 若存在连续超过两个节点仅时间戳不同(power 与 charging 均相同),
+///   则该段仅首尾节点显示强调圆点,中间节点不再绘制
 Canvas {
     id: root
 
@@ -123,13 +125,41 @@ Canvas {
         }
 
         // ── 节点圆点(与该节点状态同色:充电绿,放电主题色) ──
+        // 显示逻辑:把连续且 power/charging 完全相同的节点归为一段;
+        // 段长超过 2(即 >2 个节点仅时间戳不同)时,仅首尾显示强调圆点,中间节点不画。
+        var showDot = [];
+        var emphasized = [];
+        for (var s = 0; s < n; s++) {
+            showDot.push(true);
+            emphasized.push(false);
+        }
+        var runStart = 0;
+        for (var r = 1; r <= n; r++) {
+            var runEnds = (r === n)
+                || root.samples[r].power !== root.samples[r - 1].power
+                || root.samples[r].charging !== root.samples[r - 1].charging;
+            if (runEnds) {
+                var runLen = r - runStart;
+                if (runLen > 2) {
+                    emphasized[runStart] = true;
+                    emphasized[r - 1] = true;
+                    for (var m = runStart + 1; m < r - 1; m++) {
+                        showDot[m] = false;
+                    }
+                }
+                runStart = r;
+            }
+        }
+
         var dotR = Math.max(2.0, Math.min(3.0, plotW / n / 2));
-        for (var i = 0; i < n; i++) {
-            var dx = padL + plotW * i / (n - 1);
-            var dy = padT + plotH * (1 - root.samples[i].power / maxP);
-            ctx.fillStyle = root.samples[i].charging ? chargeColor : lineColor;
+        var emphR = dotR + 1.0; // 强调圆点略大
+        for (var d = 0; d < n; d++) {
+            if (!showDot[d]) continue;
+            var dx = padL + plotW * d / (n - 1);
+            var dy = padT + plotH * (1 - root.samples[d].power / maxP);
+            ctx.fillStyle = root.samples[d].charging ? chargeColor : lineColor;
             ctx.beginPath();
-            ctx.arc(dx, dy, dotR, 0, 2 * Math.PI);
+            ctx.arc(dx, dy, emphasized[d] ? emphR : dotR, 0, 2 * Math.PI);
             ctx.fill();
         }
 
